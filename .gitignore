@@ -1,0 +1,26 @@
+# Build outputs
+**/bin/
+**/obj/
+**/out/
+*.user
+*.suo
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dataset and generated files (mounted via ./data at runtime)
+data/
+!data/.gitkeep
+
+# Docker
+*.log
+
+# Cloned challenge repo (reference only)
+rinha-de-backend-2026/
