@@ -5,7 +5,7 @@ x-api: &api
   platform: linux/amd64
   networks: [ app ]
   volumes:
-    - ./data:/input:ro
+    - ./resources:/input:ro
     - refs:/refs
   expose:
     - "8080"
