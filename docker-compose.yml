@@ -2,6 +2,7 @@ name: rinha2026
 
 x-api: &api
   image: sylviot/rinha2026:v0
+  platform: linux/amd64
   networks: [ app ]
   volumes:
     - ./data:/input:ro
@@ -35,6 +36,7 @@ services:
 
   lb:
     image: nginx:1.27-alpine
+    platform: linux/amd64
     hostname: lb
     networks: [ app ]
     volumes:
