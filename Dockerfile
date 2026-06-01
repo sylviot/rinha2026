@@ -19,5 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/FraudApi /app/FraudApi
+# Pre-built dataset — eliminates the 60s preprocess on first boot.
+COPY data/refs.bin /app/refs.bin
 EXPOSE 8080
 ENTRYPOINT ["/app/FraudApi"]

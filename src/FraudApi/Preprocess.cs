@@ -15,6 +15,7 @@ public static class Preprocess
     private const string ReferencesGz = "/input/references.json.gz";
     private const string RawPath = "/refs/raw.bin";
     public const string McccRiskPath = "/input/mcc_risk.json";
+    private const string EmbeddedBin = "/app/refs.bin";
 
     // Inverted-file (IVF) parameters. With 3M refs:
     //   avg cluster size  = 3M / 1024  ≈ 2930
@@ -31,6 +32,32 @@ public static class Preprocess
     {
         Directory.CreateDirectory(DataDir);
         if (File.Exists(ReadyFlag) && IsValidBinary()) return;
+
+        // Fast path: pre-built binary shipped inside the image — copy once to the volume.
+        if (File.Exists(EmbeddedBin) && !IsValidBinary())
+        {
+            FileStream? copyLock = null;
+            try { copyLock = new FileStream(LockFile, FileMode.CreateNew, FileAccess.Write, FileShare.None); }
+            catch (IOException)
+            {
+                // Another instance is already copying; wait for it.
+                while (!File.Exists(ReadyFlag)) { ct.ThrowIfCancellationRequested(); await Task.Delay(200, ct); }
+                return;
+            }
+            try
+            {
+                if (IsValidBinary()) return; // won the race but other instance already finished
+                Console.WriteLine("[preprocess] copying pre-built refs.bin from image...");
+                var t0 = Environment.TickCount64;
+                var tmp = RefsBin + ".tmp";
+                File.Copy(EmbeddedBin, tmp, overwrite: true);
+                File.Move(tmp, RefsBin, overwrite: true);
+                File.WriteAllText(ReadyFlag, DateTime.UtcNow.ToString("o"));
+                Console.WriteLine($"[preprocess] ready in {Environment.TickCount64 - t0}ms (pre-built)");
+            }
+            finally { copyLock.Dispose(); try { File.Delete(LockFile); } catch { } }
+            return;
+        }
         if (File.Exists(ReadyFlag)) File.Delete(ReadyFlag);
 
         FileStream? lockStream = null;
