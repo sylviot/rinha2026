@@ -28,36 +28,27 @@ public static class Preprocess
     private const int HeaderSize = 64;
     private const int RawEntrySize = Featurize.Stride + 1; // vector + label byte
 
+    /// <summary>
+    /// Returns the path to the ready-to-use refs.bin.
+    /// Fast path: /app/refs.bin baked into the image (zero copy, zero preprocess).
+    /// Fallback:  /refs/refs.bin on the writable volume (built at first boot).
+    /// </summary>
+    public static string GetActivePath() =>
+        IsValidBinaryAt(EmbeddedBin) ? EmbeddedBin : RefsBin;
+
     public static async Task EnsureAsync(CancellationToken ct)
     {
-        Directory.CreateDirectory(DataDir);
-        if (File.Exists(ReadyFlag) && IsValidBinary()) return;
-
-        // Fast path: pre-built binary shipped inside the image — copy once to the volume.
-        if (File.Exists(EmbeddedBin) && !IsValidBinary())
+        // Fast path: pre-built binary baked into the image — use it directly, no copy needed.
+        if (IsValidBinaryAt(EmbeddedBin))
         {
-            FileStream? copyLock = null;
-            try { copyLock = new FileStream(LockFile, FileMode.CreateNew, FileAccess.Write, FileShare.None); }
-            catch (IOException)
-            {
-                // Another instance is already copying; wait for it.
-                while (!File.Exists(ReadyFlag)) { ct.ThrowIfCancellationRequested(); await Task.Delay(200, ct); }
-                return;
-            }
-            try
-            {
-                if (IsValidBinary()) return; // won the race but other instance already finished
-                Console.WriteLine("[preprocess] copying pre-built refs.bin from image...");
-                var t0 = Environment.TickCount64;
-                var tmp = RefsBin + ".tmp";
-                File.Copy(EmbeddedBin, tmp, overwrite: true);
-                File.Move(tmp, RefsBin, overwrite: true);
-                File.WriteAllText(ReadyFlag, DateTime.UtcNow.ToString("o"));
-                Console.WriteLine($"[preprocess] ready in {Environment.TickCount64 - t0}ms (pre-built)");
-            }
-            finally { copyLock.Dispose(); try { File.Delete(LockFile); } catch { } }
+            Directory.CreateDirectory(DataDir);
+            File.WriteAllText(ReadyFlag, DateTime.UtcNow.ToString("o"));
             return;
         }
+
+        // Slow path: build from references.json.gz into the writable volume.
+        Directory.CreateDirectory(DataDir);
+        if (File.Exists(ReadyFlag) && IsValidBinary()) return;
         if (File.Exists(ReadyFlag)) File.Delete(ReadyFlag);
 
         FileStream? lockStream = null;
@@ -91,12 +82,14 @@ public static class Preprocess
         }
     }
 
-    private static bool IsValidBinary()
+    private static bool IsValidBinary() => IsValidBinaryAt(RefsBin);
+
+    private static bool IsValidBinaryAt(string path)
     {
-        if (!File.Exists(RefsBin)) return false;
+        if (!File.Exists(path)) return false;
         try
         {
-            using var fs = File.OpenRead(RefsBin);
+            using var fs = File.OpenRead(path);
             Span<byte> hdr = stackalloc byte[16];
             if (fs.Read(hdr) != 16) return false;
             return BitConverter.ToUInt32(hdr[..4]) == Magic
@@ -105,7 +98,7 @@ public static class Preprocess
         catch { return false; }
     }
 
-    private static void BuildBinary()
+    public static void BuildBinary()
     {
         if (!File.Exists(ReferencesGz))
             throw new FileNotFoundException("missing references.json.gz", ReferencesGz);

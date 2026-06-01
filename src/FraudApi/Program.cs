@@ -5,6 +5,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using FraudApi;
 
+// PREPROCESS_ONLY=1 → build refs.bin and exit (used during docker build).
+if (Environment.GetEnvironmentVariable("PREPROCESS_ONLY") == "1")
+{
+    Directory.CreateDirectory(Preprocess.DataDir);
+    Preprocess.BuildBinary();
+    Console.WriteLine("[preprocess-only] done");
+    return;
+}
+
 // State shared between background preprocess and request handlers.
 var state = new AppState();
 
@@ -16,7 +25,7 @@ _ = Task.Run(async () =>
     {
         await Preprocess.EnsureAsync(CancellationToken.None);
         state.MccRisk = Preprocess.LoadMccRisk();
-        var ds = new Dataset(Preprocess.RefsBin);
+        var ds = new Dataset(Preprocess.GetActivePath());
         Console.WriteLine($"[startup] dataset loaded: {ds.Count:N0} vectors, {ds.NumCentroids} centroids, AVX2={System.Runtime.Intrinsics.X86.Avx2.IsSupported}");
         var t0 = Environment.TickCount64;
         var warmupSum = ds.WarmUp();
