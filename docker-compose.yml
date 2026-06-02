@@ -1,7 +1,7 @@
 name: rinha2026
 
 x-api: &api
-  image: sylviot/rinha2026:v3
+  image: sylviot/rinha2026:v4
   platform: linux/amd64
   networks: [ app ]
   volumes:
