@@ -92,16 +92,28 @@ if (!string.IsNullOrWhiteSpace(socketPath))
 
 app.MapGet("/ready", () => state.Ready ? Results.Ok() : Results.StatusCode(503));
 
-app.MapPost("/fraud-score", (TxRequest req) =>
+// Pre-serialize the 6 possible fraud-score outcomes (0/5 .. 5/5). Saves a
+// JsonSerializer call per request — the response is just a memcpy of bytes.
+byte[][] cachedResponses = new byte[6][];
+for (int i = 0; i <= 5; i++)
+{
+    double s = i / 5.0;
+    cachedResponses[i] = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+        new FraudResponse { Approved = s < 0.6, FraudScore = s },
+        AppJsonContext.Default.FraudResponse);
+}
+
+app.MapPost("/fraud-score", (TxRequest req, HttpContext http) =>
 {
     var ds = state.Dataset;
     var mcc = state.MccRisk;
     if (ds is null || mcc is null) return Results.StatusCode(503);
+
     Span<sbyte> q = stackalloc sbyte[Featurize.Stride];
     Featurize.Build(req, mcc, q);
-    double score = ds.Score(q);
-    return Results.Json(new FraudResponse { Approved = score < 0.6, FraudScore = score },
-        AppJsonContext.Default.FraudResponse);
+    int frauds = ds.ScoreFrauds(q);   // returns 0..5 directly
+
+    return Results.Bytes(cachedResponses[frauds], "application/json");
 });
 
 // Diagnostic: run N internal scoring iterations against a zero-query and

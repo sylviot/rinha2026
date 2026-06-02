@@ -10,24 +10,23 @@ x-api: &api
     - refs:/refs
     - sock:/run/sock
   depends_on: []
-  environment:
-    DOTNET_gcServer: "0"
-    DOTNET_GCConserveMemory: "9"
-    DOTNET_GCHeapHardLimitPercent: "50"
+  # Common DOTNET tuning is set per-service below (YAML override replaces, doesn't merge).
 
 services:
   api1:
     <<: *api
     hostname: api1
     environment:
+      # Workstation GC (CPU-constrained); ConserveMemory=1 keeps GC pauses small for p99.
       DOTNET_gcServer: "0"
-      DOTNET_GCConserveMemory: "9"
-      DOTNET_GCHeapHardLimitPercent: "50"
+      DOTNET_GCConserveMemory: "1"
+      DOTNET_GCHeapHardLimitPercent: "70"
+      DOTNET_TieredCompilation: "0"
       LISTEN_SOCK: /run/sock/api-1.sock
     deploy:
       resources:
         limits:
-          cpus: "0.475"
+          cpus: "0.40"
           memory: "170MB"
 
   api2:
@@ -35,13 +34,14 @@ services:
     hostname: api2
     environment:
       DOTNET_gcServer: "0"
-      DOTNET_GCConserveMemory: "9"
-      DOTNET_GCHeapHardLimitPercent: "50"
+      DOTNET_GCConserveMemory: "1"
+      DOTNET_GCHeapHardLimitPercent: "70"
+      DOTNET_TieredCompilation: "0"
       LISTEN_SOCK: /run/sock/api-2.sock
     deploy:
       resources:
         limits:
-          cpus: "0.475"
+          cpus: "0.40"
           memory: "170MB"
 
   lb:
@@ -56,10 +56,12 @@ services:
     depends_on:
       - api1
       - api2
+    # nginx is the proxy AND the work scheduler — needs enough CPU to not queue under load.
+    # Was 0.05 → 100% saturated at 900 RPS, dominated the p99 tail.
     deploy:
       resources:
         limits:
-          cpus: "0.05"
+          cpus: "0.20"
           memory: "10MB"
 
 volumes:

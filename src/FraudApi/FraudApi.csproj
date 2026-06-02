@@ -11,6 +11,9 @@
     <OptimizationPreference>Speed</OptimizationPreference>
     <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
     <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+    <!-- Target modern x86_64 baseline: AVX2 + BMI + FMA. Required for the SIMD
+         path in Dataset.DistanceL2 to be selected at AOT compile time. -->
+    <IlcInstructionSet>avx2,bmi,bmi2,fma,popcnt</IlcInstructionSet>
     <StripSymbols>true</StripSymbols>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>

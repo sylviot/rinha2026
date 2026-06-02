@@ -54,18 +54,37 @@ public sealed unsafe class Dataset : IDisposable
         _mmf.Dispose();
     }
 
-    /// <summary>Touches every 4KB page so the kernel pages it in now.</summary>
+    /// <summary>
+    /// Touches every 4KB page (so the kernel pages mmap in) AND runs a handful of
+    /// real Score() calls so JIT/AOT branch predictors and CPU caches are warm by
+    /// the time real traffic arrives. Reduces p99 cold-start spikes substantially.
+    /// </summary>
     public long WarmUp()
     {
+        // 1) Page-in: every 4KB so future mmap reads don't take page-fault hits.
         long sum = 0;
         long total = (long)NumCentroids * Stride + (long)(NumCentroids + 1) * 4
                    + (long)Count * Stride + Count;
         byte* p = (byte*)_centroids;
         for (long off = 0; off < total; off += 4096) sum += p[off];
+
+        // 2) CPU/branch-predictor warmup: exercise the hot scoring path with
+        //    a few varied queries so the AOT code is fully resident in L1i and
+        //    the inner-loop branches have predictable history.
+        Span<sbyte> q = stackalloc sbyte[Stride];
+        var rng = new Random(7);
+        for (int iter = 0; iter < 256; iter++)
+        {
+            for (int d = 0; d < Dims; d++) q[d] = (sbyte)(rng.Next(-127, 128));
+            sum += ScoreFrauds(q);
+        }
         return sum;
     }
 
-    public double Score(ReadOnlySpan<sbyte> query)
+    public double Score(ReadOnlySpan<sbyte> query) => ScoreFrauds(query) / 5.0;
+
+    /// <summary>Returns the number of fraud-labeled neighbors among the top-5 (0..5).</summary>
+    public int ScoreFrauds(ReadOnlySpan<sbyte> query)
     {
         Span<sbyte> qbuf = stackalloc sbyte[Stride];
         query.CopyTo(qbuf);
@@ -119,7 +138,7 @@ public sealed unsafe class Dataset : IDisposable
             if (d2 != int.MaxValue) frauds += _labels[i2];
             if (d3 != int.MaxValue) frauds += _labels[i3];
             if (d4 != int.MaxValue) frauds += _labels[i4];
-            return frauds / 5.0;
+            return frauds;
         }
     }
 
