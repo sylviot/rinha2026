@@ -30,5 +30,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY --from=build /app/FraudApi /app/FraudApi
 COPY --from=preprocess /refs/refs.bin /app/refs.bin
-EXPOSE 8080
 ENTRYPOINT ["/app/FraudApi"]

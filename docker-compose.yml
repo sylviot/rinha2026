@@ -8,8 +8,7 @@ x-api: &api
   volumes:
     - ./data:/input:ro
     - refs:/refs
-  expose:
-    - "8080"
+    - sock:/run/sock
   depends_on: []
   environment:
     DOTNET_gcServer: "0"
@@ -20,6 +19,11 @@ services:
   api1:
     <<: *api
     hostname: api1
+    environment:
+      DOTNET_gcServer: "0"
+      DOTNET_GCConserveMemory: "9"
+      DOTNET_GCHeapHardLimitPercent: "50"
+      LISTEN_SOCK: /run/sock/api-1.sock
     deploy:
       resources:
         limits:
@@ -29,6 +33,11 @@ services:
   api2:
     <<: *api
     hostname: api2
+    environment:
+      DOTNET_gcServer: "0"
+      DOTNET_GCConserveMemory: "9"
+      DOTNET_GCHeapHardLimitPercent: "50"
+      LISTEN_SOCK: /run/sock/api-2.sock
     deploy:
       resources:
         limits:
@@ -41,6 +50,7 @@ services:
     networks: [ app ]
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - sock:/run/sock
     ports:
       - "9999:9999"
     depends_on:
@@ -54,6 +64,12 @@ services:
 
 volumes:
   refs:
+  sock:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=4m,mode=0777"
 
 networks:
   app:

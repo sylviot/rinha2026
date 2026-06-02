@@ -45,6 +45,10 @@ _ = Task.Run(async () =>
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.Logging.ClearProviders();
 
+// If LISTEN_SOCK is set, bind a Unix domain socket (preferred — no TCP/IP overhead).
+// Otherwise fall back to TCP :8080 (dev/local).
+var socketPath = Environment.GetEnvironmentVariable("LISTEN_SOCK");
+
 builder.WebHost.ConfigureKestrel(o =>
 {
     o.AllowSynchronousIO = false;
@@ -52,7 +56,16 @@ builder.WebHost.ConfigureKestrel(o =>
     o.Limits.MaxConcurrentUpgradedConnections = 0;
     o.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(120);
     o.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
-    o.ListenAnyIP(8080);
+
+    if (!string.IsNullOrWhiteSpace(socketPath))
+    {
+        if (File.Exists(socketPath)) File.Delete(socketPath);
+        o.ListenUnixSocket(socketPath);
+    }
+    else
+    {
+        o.ListenAnyIP(8080);
+    }
 });
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -61,6 +74,21 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 });
 
 var app = builder.Build();
+
+// Open up socket permissions so a load-balancer running as a different user can connect.
+if (!string.IsNullOrWhiteSpace(socketPath))
+{
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        if (!File.Exists(socketPath)) return;
+#pragma warning disable CA1416
+        File.SetUnixFileMode(socketPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+#pragma warning restore CA1416
+    });
+}
 
 app.MapGet("/ready", () => state.Ready ? Results.Ok() : Results.StatusCode(503));
 
